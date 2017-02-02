@@ -27,6 +27,9 @@
 		var livesText;
 		var lifeLostText;
 
+		var playing = false;
+		var startButton;
+
 		function preload() {
 			game.scale.scaleMode = Phaser.ScaleManager.SHOW_ALL;
 			game.scale.pageAlignHorizontally = true;
@@ -37,6 +40,8 @@
 			game.load.image('ball', 'res/ball.png');
 			game.load.image('paddle', 'res/paddle.png');
 			game.load.image('brick', 'res/brick.png');
+			game.load.spritesheet('ball', 'res/wobble.png', 20, 20);
+			game.load.spritesheet('button', 'res/button.png', 120, 40);
 		}
 
 		function create() {
@@ -44,14 +49,22 @@
 
 			// ball config
 			ball = game.add.sprite( game.world.width * 0.5, game.world.height - 25, 'ball');
+			// .animations.add(<name>, [<list of animation frames from spritesheet indices>], <animation speed in fps>)
+			// because there are 9 frames in our listed animation and we're displaying it at 24 frames per second
+			// 24 / 9 = <3 : so there are slightly less than 3 full cycles of the animation per second
+			ball.animations.add('wobble', [0,1,0,2,0,1,0,2,0], 24);
+			// .anchor.set(<percentage>)
+			// (I THINK) positions the anchor <num>% into the horizontal and vertical directions
+			// eg. .set(0.5) = anchor at horizontal and vertical center
 			ball.anchor.set(0.5)
 			game.physics.enable(ball, Phaser.Physics.ARCADE);
-			ball.body.velocity.set(150,-150);
 			ball.body.collideWorldBounds = true;
 			ball.body.bounce.set(1);
 
 			// paddle spawn and config
 			paddle = game.add.sprite( game.world.width * 0.5, game.world.height - 5, 'paddle');
+			// .anchor.set(<x-axis percentage>, <y-axis percentage>)
+			// sets the anchor <x>% horizontally and <y>% vertically into the sprite
 			paddle.anchor.set(0.5,1);
 			game.physics.enable(paddle, Phaser.Physics.ARCADE);
 			paddle.body.immovable = true;
@@ -69,15 +82,28 @@
 			lifeLostText = game.add.text(game.world.width * 0.5, game.world.height * 0.5, 'Life lost, click to continue', textStyle);
 			lifeLostText.anchor.set(0.5);
 			lifeLostText.visible = false;
+
+			// start button
+			/* .add.button( <x>, <y>, <sprite>, <function when pressed>, <execution context>, <'over' frame>, <'out' frame>, <'down' frame>)
+				<x>, <y> : positional coordinates
+				<sprite> : sprite
+				<function>, <execution context> : the function to execute when pressed, using <execution context> as the "this" for that function
+				<? frame> : which frames from the spritesheet to use for the mouseover, mouse not over, and clicked states
+			*/
+			startButton = game.add.button( game.world.width * 0.5, game.world.height * 0.5, 'button', startGame, this, 1, 0, 2);
+			startButton.anchor.set(0.5);
 		}
 
 		function update() {
 			// Check physics
-			game.physics.arcade.collide(ball, paddle);
+			game.physics.arcade.collide(ball, paddle, ballHitPaddle);
 			game.physics.arcade.collide(ball, bricks, ballHitBrick);
 
 			// Read input
-			paddle.x = game.input.x || game.world.width * 0.5;
+			if (playing) {
+				prev_position = paddle.x
+				paddle.x = game.input.x || prev_position || game.world.width * 0.5;
+			}
 		}
 
 		function initBricks() {
@@ -111,7 +137,39 @@
 		}
 
 		function ballHitBrick(ball, brick) {
-			brick.kill();
+			ball.animations.play('wobble');
+
+			// Tween a death animation for the brick
+			// .add.tween(<property>)
+			// creates a Tween object ready to tween <property>
+			// which can be .scale and presumably other things
+			var killTween = game.add.tween(brick.scale);
+			// Tween.to( {<target state>}, <time in ms>, <type of easing> )
+			// configures the tween's <target state> (what you want it to look like at the end of the animation)
+			// over the course of <time> using this <easing> algorithm (don't know what that means)
+			// KNOWN EASING TYPES:
+			// 		Phaser.Easing.Linear.None
+			//					 .Elastic.Out
+			// 							 .In (presumably)
+			killTween.to({x:0,y:0}, 200, Phaser.Easing.Linear.None);
+			// Tween.onComplete.addOnce( <function> )
+			// .onComplete is an event handler built in to the Tween that triggers events
+			// on the completion of the tween (duh) 
+			killTween.onComplete.addOnce(function() {
+					brick.kill();
+			}, this);
+			// Tween.start()
+			// kick off the animation
+			killTween.start();
+
+			// Tween shorthand function
+			// HERE BE DRAGONS
+			// game.add.tween(<property>).to({<target state>}, {time to play out in ms}, {easing style}, {start automatically?}, {delay in ms});
+			// {start automatically?} defaults to false, when true the animation will play
+			//		as soon as the line is hit, rather than when you call Tween.start()
+			// {delay in ms} is a time in ms before the tween autoplays after the line is hit
+
+			// Update the scoreboard
 			score += 10;
 			scoreText.setText('Points: ' + score);
 
@@ -143,6 +201,17 @@
 				alert('You lost, game over!');
 				location.reload();
 			}
+		}
+
+		function ballHitPaddle(ball, paddle) {
+			ball.animations.play('wobble');
+			ball.body.velocity.x = -5 * (paddle.x - ball.x);
+		}
+
+		function startGame() { 
+			startButton.destroy();
+			ball.body.velocity.set(150, -150);
+			playing = true;
 		}
 	</script>
 </body>
